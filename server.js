@@ -3,7 +3,8 @@ import fetch from 'node-fetch';
 import http from 'http';
 import https from 'https';
 import dotenv from 'dotenv';
-import { enhanceCherryRequest } from './enhancer.js';
+import { PluginManager } from './plugins/manager.js';
+import { ClaudeCodePlugin } from './plugins/claude-code.js';
 
 dotenv.config();
 
@@ -12,7 +13,7 @@ const PORT = process.env.PORT || 3001;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL || 'https://www.88code.org/api';
 
-// HTTP连接池配置（复用TCP连接，提升性能）
+// HTTP连接池配置
 const httpAgent = new http.Agent({
   keepAlive: true,
   keepAliveMsecs: 30000,
@@ -26,6 +27,12 @@ const httpsAgent = new https.Agent({
   maxSockets: 100,
   maxFreeSockets: 10
 });
+
+// 初始化插件管理器
+const pluginManager = new PluginManager();
+
+// 注册默认插件
+pluginManager.register(new ClaudeCodePlugin());
 
 // 中间件：解析 JSON
 app.use(express.json({ limit: '50mb' }));
@@ -44,32 +51,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// Claude Code CLI 的请求头特征（基于官方 2.0.24 版本）
-const CLAUDE_CODE_HEADERS = {
-  'accept': 'application/json',
-  'anthropic-beta': 'claude-code-20250219',
-  'anthropic-dangerous-direct-browser-access': 'true',
-  'anthropic-version': '2023-06-01',
-  'content-type': 'application/json',
-  'user-agent': 'claude-cli/2.0.24 (external, cli)',
-  'x-app': 'cli',
-  'x-stainless-arch': 'x64',
-  'x-stainless-lang': 'js',
-  'x-stainless-os': 'Linux',
-  'x-stainless-runtime': 'node',
-  'x-stainless-runtime-version': 'v22.16.0'
-};
-
 /**
  * 提取API Key（支持多种格式）
  */
 function extractApiKey(req) {
-  // 1. 环境变量优先
   if (ANTHROPIC_API_KEY) {
     return ANTHROPIC_API_KEY;
   }
 
-  // 2. Authorization头（Bearer格式）
   if (req.headers.authorization) {
     const auth = req.headers.authorization;
     if (auth.startsWith('Bearer ') || auth.startsWith('bearer ')) {
@@ -78,12 +67,10 @@ function extractApiKey(req) {
     return auth;
   }
 
-  // 3. x-api-key头
   if (req.headers['x-api-key']) {
     return req.headers['x-api-key'];
   }
 
-  // 4. anthropic-api-key头
   if (req.headers['anthropic-api-key']) {
     return req.headers['anthropic-api-key'];
   }
@@ -106,14 +93,22 @@ app.post('/v1/messages', async (req, res) => {
       });
     }
 
-    // 增强Cherry请求（伪装成Claude Code）
-    req.body = enhanceCherryRequest(req.body, req.headers);
+    // 使用插件系统处理请求
+    const result = pluginManager.process(req.body, req.headers);
 
-    // 构建伪装请求头
-    const headers = {
-      ...CLAUDE_CODE_HEADERS,
-      'authorization': `Bearer ${apiKey}`
-    };
+    let headers;
+    if (result) {
+      // 匹配到插件，使用插件转换
+      req.body = result.body;
+      headers = result.getHeaders(apiKey);
+      console.log(`🎭 Plugin: ${result.plugin.name} v${result.plugin.version}`);
+    } else {
+      // 无匹配插件，直接透传
+      headers = {
+        'authorization': `Bearer ${apiKey}`,
+        'content-type': 'application/json'
+      };
+    }
 
     // 转发请求到上游API
     const anthropicUrl = `${ANTHROPIC_BASE_URL}/v1/messages`;
@@ -130,7 +125,6 @@ app.post('/v1/messages', async (req, res) => {
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
 
-      // 错误处理
       response.body.on('error', (err) => {
         console.error('Stream error:', err.message);
         if (!res.headersSent) {
@@ -180,8 +174,8 @@ app.post('/v1/messages/count_tokens', async (req, res) => {
     }
 
     const headers = {
-      ...CLAUDE_CODE_HEADERS,
-      'authorization': `Bearer ${apiKey}`
+      'authorization': `Bearer ${apiKey}`,
+      'content-type': 'application/json'
     };
 
     const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages/count_tokens`, {
@@ -209,6 +203,14 @@ app.post('/v1/messages/count_tokens', async (req, res) => {
   }
 });
 
+// 插件管理端点
+app.get('/plugins', (req, res) => {
+  res.json({
+    plugins: pluginManager.list(),
+    total: pluginManager.plugins.size
+  });
+});
+
 // 健康检查
 app.get('/health', (req, res) => {
   res.json({
@@ -216,35 +218,47 @@ app.get('/health', (req, res) => {
     service: 'anthropic-proxy',
     timestamp: new Date().toISOString(),
     api_key_configured: !!ANTHROPIC_API_KEY,
-    target: ANTHROPIC_BASE_URL
+    target: ANTHROPIC_BASE_URL,
+    plugins: pluginManager.plugins.size
   });
 });
 
 // 根路径
 app.get('/', (req, res) => {
   res.json({
-    name: 'Anthropic Proxy (Claude Code Impersonator)',
-    version: '1.0.0',
-    description: '伪装成 Claude Code CLI 的代理服务',
+    name: 'Anthropic Proxy (Plugin-based Architecture)',
+    version: '2.0.0',
+    description: '基于插件架构的协议转换代理服务',
     endpoints: {
       messages: 'POST /v1/messages',
       count_tokens: 'POST /v1/messages/count_tokens',
+      plugins: 'GET /plugins',
       health: 'GET /health'
     },
     features: {
-      cherry_detection: 'Auto-detect CherryStudio requests',
-      system_injection: 'Inject Claude Code identity',
-      session_cache: '12-hour rotating session for API cache optimization',
-      connection_pool: 'HTTP keep-alive for performance'
+      plugin_system: 'Extensible protocol conversion plugins',
+      connection_pool: 'HTTP keep-alive for performance',
+      stream_support: 'Server-Sent Events streaming',
+      auto_detection: 'Automatic client detection'
     }
   });
 });
 
 // 启动服务器
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('🚀 Anthropic Proxy Started');
+  console.log('🚀 Anthropic Proxy Started (Plugin-based)');
   console.log(`📍 Listening: http://0.0.0.0:${PORT}`);
-  console.log(`🎭 Spoofing: ${CLAUDE_CODE_HEADERS['user-agent']}`);
   console.log(`🔗 Target: ${ANTHROPIC_BASE_URL}`);
   console.log(`🔑 API Key: ${ANTHROPIC_API_KEY ? 'Configured' : 'From clients'}`);
+  console.log(`🔌 Plugins: ${pluginManager.plugins.size} loaded`);
+  pluginManager.list().forEach(p => {
+    console.log(`   - ${p.name} v${p.version}: ${p.description}`);
+  });
+});
+
+// 优雅关闭
+process.on('SIGTERM', () => {
+  console.log('Shutting down gracefully...');
+  pluginManager.destroyAll();
+  process.exit(0);
 });
