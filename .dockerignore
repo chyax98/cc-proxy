@@ -1,0 +1,92 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+.ruff_cache
+
+# 虚拟环境
+.venv
+venv
+ENV
+env
+env.bak/
+venv.bak/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+
+# 日志文件
+logs/
+*.log
+
+# 测试文件
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 构建产物
+dist/
+build/
+*.egg-info/
+
+# Docker 相关
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# 开发配置
+.env.local
+.env.dev
+
+# 文档
+*.md
+!README.md
+
+# Claude 相关
+.claude/
+
+# 缓存
+.cache/
+.mypy_cache/
+.ruff_cache/
+
+# 其他
+.python-version

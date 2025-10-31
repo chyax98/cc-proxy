@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  cc-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cc-proxy-app
+    restart: unless-stopped
+
+    # 端口映射 (挂载到主机的 8001, 8002 端口)
+    ports:
+      - "8001:8001"  # Claude Service
+      - "8002:8002"  # Codex Service
+
+    # 环境变量
+    environment:
+      # 基础配置
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+
+      # 服务配置
+      - CLAUDE_SERVICE_HOST=0.0.0.0
+      - CLAUDE_SERVICE_PORT=8001
+      - CODEX_SERVICE_HOST=0.0.0.0
+      - CODEX_SERVICE_PORT=8002
+
+      # 外部 API (可根据实际需要修改)
+      - ANTHROPIC_BASE_URL=https://www.88code.org/api
+      - OPENAI_BASE_URL=https://www.88code.org/openai
+
+      # 调试配置 (生产环境关闭)
+      - CODEX_DUMP_REQUESTS=false
+      - LOG_REQUESTS=false
+
+    # 资源限制
+    deploy:
+      resources:
+        # 内存限制 (512MB)
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        # 内存预留 (256MB)
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+
+    # 健康检查
+    healthcheck:
+      test: |
+        CMD curl -f http://localhost:8001/health &&
+            curl -f http://localhost:8002/health ||
+            exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # 挂载卷 (用于日志和持久化数据)
+    volumes:
+      - ./logs:/app/logs
+      - app_cache:/app/.cache
+
+    # 网络配置
+    networks:
+      - cc-proxy-network
+
+    # 优化配置
+    init: true
+    stop_grace_period: 30s
+
+volumes:
+  app_cache:
+    driver: local
+
+networks:
+  cc-proxy-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

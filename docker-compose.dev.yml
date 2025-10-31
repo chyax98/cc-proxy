@@ -1,0 +1,57 @@
+version: '3.8'
+
+# 开发环境配置 (覆盖 docker-compose.yml)
+services:
+  cc-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cc-proxy-dev
+    restart: "no"  # 开发环境不自动重启
+
+    # 开发环境端口映射 (保持一致)
+    ports:
+      - "8001:8001"  # Claude Service
+      - "8002:8002"  # Codex Service
+
+    # 开发环境变量
+    environment:
+      # 开发配置
+      - ENVIRONMENT=test
+      - LOG_LEVEL=DEBUG
+      - LOG_FORMAT=json
+
+      # 调试配置 (开发环境开启)
+      - CODEX_DUMP_REQUESTS=true
+      - CODEX_DUMP_DIR=/tmp/dumps
+      - LOG_REQUESTS=true
+
+    # 开发环境资源限制 (更宽松)
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '1.0'
+
+    # 开发环境挂载 (实时同步代码)
+    volumes:
+      # 同步代码 (热重载)
+      - .:/app
+      - ./logs:/app/logs
+      - /tmp/cc-proxy-dumps:/tmp/dumps
+
+    # 开发环境不进行健康检查 (避免干扰调试)
+    healthcheck:
+      disable: true
+
+    # 开发环境网络
+    networks:
+      - cc-proxy-dev-network
+
+# 开发环境网络
+networks:
+  cc-proxy-dev-network:
+    driver: bridge
