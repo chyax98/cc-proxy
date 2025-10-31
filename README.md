@@ -52,7 +52,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/cc-proxy.git
+git clone https://github.com/chyax98/cc-proxy.git
 cd cc-proxy
 
 # 安装 uv (如未安装)
@@ -263,7 +263,6 @@ HTTP_KEEPALIVE_EXPIRY=30.0
 ## 📖 文档
 
 - **[CLAUDE.md](CLAUDE.md)** - AI 开发指南和完整架构文档
-- **[claudedocs/](claudedocs/)** - 专家评审报告和优化建议
 
 ## 🔒 安全特性
 
